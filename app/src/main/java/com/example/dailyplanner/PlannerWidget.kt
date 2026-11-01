@@ -1,16 +1,19 @@
 package com.example.dailyplanner
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.LocalContext
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
@@ -45,6 +48,7 @@ class PlannerWidget : GlanceAppWidget() {
 
 @Composable
 private fun WidgetBody(rows: List<Row>, challenge: String, test: String) {
+    val openApp = Intent(LocalContext.current, MainActivity::class.java)
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -78,14 +82,14 @@ private fun WidgetBody(rows: List<Row>, challenge: String, test: String) {
             challenge,
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .clickable(actionStartActivity<MainActivity>()),
+                .clickable(actionStartActivity(openApp)),
             style = TextStyle(fontSize = 13.sp)
         )
         Text(
             test,
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .clickable(actionStartActivity<MainActivity>()),
+                .clickable(actionStartActivity(openApp)),
             style = TextStyle(fontSize = 13.sp)
         )
     }
@@ -100,7 +104,7 @@ class ToggleAction : ActionCallback {
     ) {
         val id = parameters[ITEM] ?: return
         Store.save(context, Plan.toggle(Store.load(context), id, Plan.todayStr()))
-        PlannerWidget().updateAll(context)
+        refreshWidgets(context)
     }
 
     companion object {
@@ -110,4 +114,12 @@ class ToggleAction : ActionCallback {
 
 class PlannerWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = PlannerWidget()
+}
+
+/** 置かれている全ウィジェットを描き直す */
+suspend fun refreshWidgets(ctx: Context) {
+    val widget = PlannerWidget()
+    GlanceAppWidgetManager(ctx).getGlanceIds(PlannerWidget::class.java).forEach { id ->
+        widget.update(ctx, id)
+    }
 }

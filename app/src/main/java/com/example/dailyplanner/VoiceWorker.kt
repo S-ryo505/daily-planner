@@ -18,7 +18,7 @@ class VoiceWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        PlannerWidget().updateAll(ctx)
+        refreshWidgets(ctx)
 
         val s = JSONObject(Store.load(ctx))
         val wd = Plan.weekday()

@@ -51,7 +51,7 @@ class MainActivity : Activity() {
         fun setState(json: String) {
             Store.save(this@MainActivity, json)
             CoroutineScope(Dispatchers.IO).launch {
-                PlannerWidget().updateAll(this@MainActivity)
+                refreshWidgets(this@MainActivity)
             }
         }
 
