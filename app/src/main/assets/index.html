@@ -24,13 +24,13 @@ button.del{background:#e57373}
 input{font-size:16px;min-height:40px;padding:4px 8px;border:1px solid #bbb;border-radius:10px;max-width:100%}
 .item{border:1px solid #e3e6f0;border-radius:12px;padding:8px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
 .days label{margin-right:6px}
-.chara{text-align:center;margin:4px 0}
-#chara{display:inline-block;cursor:pointer;-webkit-user-select:none;user-select:none}
-#chara svg{width:150px;height:150px;animation:bounce 2.4s ease-in-out infinite}
-#chara.squish svg{animation:squish .45s ease}
+.chara{display:flex;justify-content:center;margin:4px 0}
+#charBox{position:relative;width:100%;max-width:260px;height:240px}
+#charFrame{width:100%;height:100%;border:none;background:transparent}
+#touch{position:absolute;inset:0;cursor:pointer}
+#charBox.squish{animation:squish .45s ease}
 .bubble{background:#fff;border:2px solid var(--main);border-radius:16px;padding:10px 12px;margin:6px 0 10px;min-height:52px;font-size:18px}
-@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@keyframes squish{0%{transform:scale(1,1)}30%{transform:scale(1.15,.85)}60%{transform:scale(.92,1.08)}100%{transform:scale(1,1)}}
+@keyframes squish{0%{transform:scale(1,1)}30%{transform:scale(1.12,.88)}60%{transform:scale(.94,1.06)}100%{transform:scale(1,1)}}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;box-shadow:0 -1px 4px rgba(0,0,0,.1)}
 nav button{flex:1;min-height:60px;border-radius:0;background:#fff;color:#555;font-size:17px}
 nav button.act{color:var(--main);font-weight:bold}
@@ -40,19 +40,12 @@ nav button.act{color:var(--main);font-weight:bold}
 <header>毎日の計画</header>
 
 <section id="today">
-  <div class="chara"><div id="chara" role="button" tabindex="0">
-    <svg viewBox="0 0 200 200" aria-label="キャラクター">
-      <ellipse cx="100" cy="115" rx="70" ry="62" fill="#ffd4e5" stroke="#e57aa0" stroke-width="4"/>
-      <ellipse cx="100" cy="62" rx="8" ry="14" fill="#ffd4e5" stroke="#e57aa0" stroke-width="3"/>
-      <circle cx="75" cy="105" r="8" fill="#333"/>
-      <circle cx="125" cy="105" r="8" fill="#333"/>
-      <circle cx="77" cy="102" r="3" fill="#fff"/>
-      <circle cx="127" cy="102" r="3" fill="#fff"/>
-      <ellipse cx="62" cy="128" rx="10" ry="6" fill="#ff8fb1" opacity=".7"/>
-      <ellipse cx="138" cy="128" rx="10" ry="6" fill="#ff8fb1" opacity=".7"/>
-      <path d="M90 125 Q100 136 110 125" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"/>
-    </svg>
-  </div></div>
+  <div class="chara">
+    <div id="charBox">
+      <iframe id="charFrame" sandbox="allow-scripts" title="キャラクター"></iframe>
+      <div id="touch" role="button" aria-label="キャラをタップ"></div>
+    </div>
+  </div>
   <div class="bubble" id="bubble">おかえり！今日も一緒にがんばろうね。</div>
   <button class="ghost" id="speakToday" style="width:100%;margin-bottom:12px">今日のお知らせを聞く</button>
   <div class="card" id="items"></div>
@@ -121,6 +114,12 @@ function upcomingTests(){
   return st.tests.filter(t=>t.date&&t.date>=d).sort((a,b)=>a.date.localeCompare(b.date));
 }
 
+/* キャラ（HTML）を読み込む。Android側が返すHTMLを、サンドボックスの iframe に入れる */
+function loadChar(){
+  if(!hasAndroid()) return;
+  try{ document.getElementById('charFrame').srcdoc=Android.getCharacter(); }catch(e){}
+}
+
 function renderToday(){
   const items=activeItems();
   document.getElementById('items').innerHTML='<b>今日</b>'+
@@ -149,6 +148,7 @@ function renderToday(){
 
 const bubble=document.getElementById('bubble');
 function show(t){bubble.textContent=t}
+/* 吹き出しに出し、端末の声でも話す */
 function say(t){
   show(t);
   if(hasAndroid()){try{Android.speak(t)}catch(e){}}
@@ -158,7 +158,7 @@ const POKE=['なあに？','きゃっ！くすぐったい！','もうー、や�
 let pokes=0;
 function poke(){
   pokes++;
-  const c=document.getElementById('chara');
+  const c=document.getElementById('charBox');
   c.classList.remove('squish'); void c.offsetWidth; c.classList.add('squish');
   say(pokes%7===0?'もう、いじわる〜！':POKE[pokes%POKE.length]);
 }
@@ -171,7 +171,7 @@ function todayLine(){
   }
 }
 
-document.getElementById('chara').addEventListener('click',poke);
+document.getElementById('touch').addEventListener('click',poke);
 document.getElementById('speakToday').addEventListener('click',todayLine);
 
 document.getElementById('today').addEventListener('click',e=>{
@@ -199,7 +199,14 @@ document.getElementById('today').addEventListener('click',e=>{
 
 function renderSettings(){
   const c=st.challenge, m=ym(), mm=c.months[m]||{};
-  let h=`<div class="card"><b>教材</b>
+  let h=`<div class="card"><b>キャラクター</b>
+    <div class="sub">Claudeで作ったHTMLファイルを選ぶと、そのキャラになります。ウィジェットの絵は、少しして更新されます。</div>
+    <input type="file" id="charFile" accept=".html,text/html" style="margin-top:8px;max-width:100%">
+    <button id="charReset" class="ghost" style="margin-top:8px;width:100%">標準キャラに戻す</button>
+    <div class="sub" id="charMsg" style="margin-top:6px"></div>
+  </div>`;
+
+  h+=`<div class="card"><b>教材</b>
     <div class="row"><span>名前</span><input id="cname" value="${esc(c.name)}" style="flex:1"></div>
     <div class="row"><span>1か月の単元数</span><input id="cunits" type="number" min="1" max="30" value="${c.unitsPerMonth}" style="width:90px"></div>
     <div class="sub" style="margin-top:6px">今月（${m}）の進み（終わった単元数）</div>
@@ -252,6 +259,20 @@ const setEl=document.getElementById('settings');
 
 setEl.addEventListener('change',e=>{
   const t=e.target;
+  if(t.id==='charFile'){
+    const f=t.files&&t.files[0];
+    if(!f) return;
+    f.text().then(txt=>{
+      try{
+        Android.saveCharacter(txt);
+        loadChar();
+        document.getElementById('charMsg').textContent='キャラを変えました。';
+      }catch(err){
+        document.getElementById('charMsg').textContent='保存できませんでした';
+      }
+    });
+    return;
+  }
   if(t.id==='cname'){
     st.challenge.name=t.value.trim()||'チャレンジ';
   }else if(t.id==='cunits'){
@@ -281,6 +302,12 @@ setEl.addEventListener('change',e=>{
 
 setEl.addEventListener('click',e=>{
   const t=e.target;
+  if(t.id==='charReset'){
+    if(hasAndroid()){ try{ Android.resetCharacter(); loadChar(); }catch(err){} }
+    renderSettings();
+    document.getElementById('charMsg').textContent='標準キャラに戻しました。';
+    return;
+  }
   if(t.id==='addItem'){
     st.items.push({id:'i'+Date.now(),name:'新しい項目',target:1,comment:'',days:[1,2,3,4,5],from:'',to:''});
   }else if(t.id==='addTest'){
@@ -306,6 +333,7 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
 // ウィジェットで回数を進めた後に戻ってきたとき、最新の状態を読み直す
 window.addEventListener('focus',()=>{st=load();renderToday();});
 
+loadChar();
 renderToday();
 renderSettings();
 </script>

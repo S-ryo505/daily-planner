@@ -124,6 +124,17 @@ object Plan {
         else "テスト「${t.first}」まであと${t.second}日"
     }
 
+    /** ウィジェットの吹き出し（短い一言） */
+    fun bubble(s: JSONObject, date: String, wd: Int): String {
+        val all = activeItems(s, date, wd)
+        if (all.isEmpty()) return "今日はおやすみだよ"
+        val todo = all.filter { it.done < it.target }
+        if (todo.isEmpty()) return "今日の分はおわり！えらい！"
+        val first = todo.first()
+        val more = if (todo.size > 1) "ほか${todo.size - 1}つ" else ""
+        return "${first.name}あと${first.target - first.done}回$more"
+    }
+
     private fun sent(x: String): String =
         if (x.last() in "。！？!?") x else "$x。"
 
