@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>毎日の計画</title>
+<style>
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;background:#f4f6fb;color:#222;font-size:18px;padding-bottom:80px}
+header{background:#3d5afe;color:#fff;padding:12px 16px;font-weight:bold;font-size:20px}
+.view{padding:10px 14px}
+h2{font-size:20px;margin:12px 0 8px}
+.card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eee}
+.row:last-child{border-bottom:none}
+.row.wrap{flex-wrap:wrap}
+.dot{width:14px;height:14px;border-radius:50%;flex:none}
+.name{flex:1}
+.sub{font-size:14px;color:#666}
+.chk{min-width:72px;min-height:56px;border-radius:14px;border:2px solid #bbb;background:#fff;font-size:16px;font-weight:bold}
+.chk.on{background:#43a047;border-color:#43a047;color:#fff}
+.chk:disabled{opacity:.4}
+.btn{min-height:52px;padding:0 18px;border-radius:14px;border:none;background:#3d5afe;color:#fff;font-size:17px;font-weight:bold;cursor:pointer}
+.btn.sub2{background:#e0e4f5;color:#333}
+.btn.danger{background:#e53935}
+.note{font-size:15px;color:#555;background:#fff8e1;border-radius:12px;padding:10px;margin:8px 0}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;box-shadow:0 -1px 4px rgba(0,0,0,.1)}
+nav button{flex:1;min-height:64px;border:none;background:none;font-size:16px}
+nav button.act{color:#3d5afe;font-weight:bold}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px 4px;text-align:left;border-bottom:1px solid #eee;font-size:16px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal div{padding:8px 0;border-radius:8px;font-size:15px}
+.cal .has{background:#c5cae9;font-weight:bold}
+.cal .bk{outline:2px dashed #ff9800}
+.cal .hd{font-size:13px;color:#888}
+input,select{font-size:17px;min-height:44px;padding:4px 8px;border:1px solid #bbb;border-radius:10px}
+#stage{width:100%;height:340px;border-radius:16px;background:#e8ecff;display:block}
+#htmlChar{width:100%;height:340px;border:none;border-radius:16px;background:#fff}
+.tm{font-size:44px;font-weight:bold;text-align:center;font-variant-numeric:tabular-nums;margin:8px 0}
+</style>
+<script type="importmap">
+{"imports":{
+ "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+ "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<header>毎日の計画</header>
+<main>
+  <section id="v-today" class="view"></section>
+  <section id="v-month" class="view" hidden></section>
+  <section id="v-reward" class="view" hidden>
+    <div class="card"><div id="rwInfo"></div></div>
+    <canvas id="stage"></canvas>
+    <iframe id="htmlChar" hidden></iframe>
+  </section>
+  <section id="v-settings" class="view" hidden></section>
+</main>
+<nav>
+  <button data-tab="today" class="act">今日</button>
+  <button data-tab="month">月</button>
+  <button data-tab="reward">ごほうび</button>
+  <button data-tab="settings">設定</button>
+</nav>
+
+<script type="module">
+const KEY='dailyPlanner.v1';
+const SUB=[{k:'kokugo',n:'国語',c:'#e57373'},{k:'sansu',n:'算数',c:'#64b5f6'},{k:'rika',n:'理科',c:'#81c784'},{k:'shakai',n:'社会',c:'#ffb74d'}];
+const PER=6;
+const DAYNAME=['日','月','火','水','木','金','土'];
+const LV=[{at:0,motion:'idle',name:'待機'},{at:5,motion:'bounce',name:'弾む'},{at:15,motion:'wave',name:'手を振る'},{at:30,motion:'dance',name:'ダンス'}];
+const DEF={
+  threshold:2, log:{}, booklets:[], timer:null, charId:'default',
+  sched:Object.fromEntries([0,1,2,3,4,5,6].map(w=>[w,{on:w>=1&&w<=5,time:'17:00',min:30,cheer:false}]))
+};
+
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today=()=>ymd(new Date());
+const parseD=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return ymd(d)};
+const fmt=ms=>{const s=Math.ceil(ms/1000);return pad(Math.floor(s/60))+':'+pad(s%60)};
+
+let st=load();
+let chars=[];
+
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s)return{...structuredClone(DEF),...s}}catch(e){}
+  return structuredClone(DEF);
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(st));render()}
+function dl(d){return (st.log[d]??={b:[],hw:false,piano:false,cheer:false,focus:false,bk:{}})}
+
+// ---- 計算 ----
+function bookletOn(d){return st.booklets.find(b=>d>=b.start&&d<addDays(b.start,b.days))}
+function monthInfo(ym){
+  const[y,m]=ym.split('-').map(Number);const n=new Date(y,m,0).getDate();
+  const days=[];
+  for(let i=1;i<=n;i++){const s=`${ym}-${pad(i)}`;const w=parseD(s).getDay();if(w>=1&&w<=5&&!bookletOn(s))days.push(s)}
+  return{total:days.length,elapsed:days.filter(s=>s<=today()).length};
+}
+function monthCount(ym,k){let n=0;for(const d in st.log)if(d.startsWith(ym))n+=st.log[d].b.filter(x=>x===k).length;return n}
+function target(k){const ym=today().slice(0,7);const{total,elapsed}=monthInfo(ym);return total?Math.min(PER,Math.round(PER*elapsed/total)):0}
+function behind(k){return Math.max(0,target(k)-monthCount(today().slice(0,7),k))}
+function behindTotal(){return SUB.reduce((n,s)=>n+behind(s.k),0)}
+function cap(){return behindTotal()>=st.threshold?3:2}
+function rewardTotal(){
+  return Object.values(st.log).reduce((n,L)=>n+L.b.length+[L.hw,L.piano,L.cheer,L.focus].filter(Boolean).length+Object.values(L.bk).filter(Boolean).length,0);
+}
+function level(){const t=rewardTotal();let L=0;LV.forEach((l,i)=>{if(t>=l.at)L=i});return L}
+
+// ---- 操作 ----
+function toggleBen(k){
+  const t=today(),L=dl(t),ym=t.slice(0,7);
+  if(L.b.includes(k)){L.b.splice(L.b.lastIndexOf(k),1)}
+  else{
+    if(L.b.length>=cap())return;
+    if(monthCount(ym,k)>=PER)return;
+    L.b.push(k);
+  }
+  save();
+}
+function timerLeft(){const T=st.timer;if(!T)return 0;return T.paused?T.remaining:Math.max(0,T.endAt-Date.now())}
+function startTimer(min){st.timer={date:today(),min,endAt:Date.now()+min*60000,paused:false,pauseUsed:false};save()}
+function pauseTimer(){const T=st.timer;if(!T||T.paused||T.pauseUsed)return;T.remaining=T.endAt-Date.now();T.paused=true;T.pauseUsed=true;save()}
+function resumeTimer(){const T=st.timer;if(!T||!T.paused)return;T.endAt=Date.now()+T.remaining;T.paused=false;delete T.remaining;save()}
+function checkTimer(){
+  const T=st.timer;if(!T)return;
+  if(!T.paused&&Date.now()>=T.endAt){dl(T.date).focus=true;st.timer=null;save()}
+}
+setInterval(()=>{
+  checkTimer();
+  const e=$('#tm');if(e&&st.timer)e.textContent=fmt(timerLeft());
+},1000);
+
+// ---- 描画 ----
+function row(k,label,on,col){
+  return `<div class="row"><span class="dot" style="background:${col}"></span><div class="name">${label}</div>
+  <button class="chk ${on?'on':''}" data-act="fix" data-k="${k}">${on?'済':'やった'}</button></div>`;
+}
+function renderToday(){
+  const t=today(),L=dl(t),w=parseD(t).getDay(),S=st.sched[w],ym=t.slice(0,7);
+  const used=L.b.length,c=cap(),bk=bookletOn(t);
+  let h=`<h2>${t.replace(/-/g,'/')}（${DAYNAME[w]}）</h2>`;
+  h+=`<div class="card"><div>今日のベネッセ：あと <b>${Math.max(0,c-used)}</b> つ（上限 ${c}）</div>`;
+  if(behindTotal()>=st.threshold&&used===0&&new Date().getHours()>=18)
+    h+=`<div class="note">遅れが大きいので、今日は3つまで取れます。まず1つから。</div>`;
+  SUB.forEach(s=>{
+    const done=L.b.includes(s.k),n=monthCount(ym,s.k),b=behind(s.k),full=n>=PER;
+    const dis=!done&&(used>=c||full);
+    h+=`<div class="row"><span class="dot" style="background:${s.c}"></span>
+    <div class="name">${s.n}<div class="sub">${full?'今月分完了':`第${n+1}単元`}${b>0?` ・ 遅れ${b}`:''}</div></div>
+    <button class="chk ${done?'on':''}" data-act="ben" data-k="${s.k}" ${dis?'disabled':''}>${done?'済':'やった'}</button></div>`;
+  });
+  h+=`</div><div class="card">`;
+  h+=row('piano','ピアノ（練習）',L.piano,'#ba68c8');
+  h+=row('hw','宿題',L.hw,'#90a4ae');
+  if(S.cheer)h+=row('cheer','チアダンス練習',L.cheer,'#f06292');
+  if(bk)h+=row('bk:'+bk.id,`冊子：${bk.name}`,!!L.bk[bk.id],'#ff9800');
+  h+=`</div>`;
+  if(S.on){
+    h+=`<div class="card"><h2 style="margin-top:0">集中 ${S.min}分</h2>`;
+    if(L.focus)h+=`<div>今日の集中は完了</div>`;
+    else if(st.timer&&st.timer.date===t){
+      h+=`<div class="tm" id="tm">${fmt(timerLeft())}</div><div style="display:flex;gap:8px;justify-content:center">`;
+      if(st.timer.paused)h+=`<button class="btn" data-act="resume">再開</button>`;
+      else if(!st.timer.pauseUsed)h+=`<button class="btn sub2" data-act="pause">一時停止（1回）</button>`;
+      h+=`</div>`;
+    }else{
+      h+=`<div>開始は ${S.time}（今からでもOK）</div><button class="btn" style="margin-top:8px;width:100%" data-act="start" data-min="${S.min}">集中を始める</button>`;
+    }
+    h+=`</div>`;
+  }
+  $('#v-today').innerHTML=h;
+}
+function renderMonth(){
+  const t=today(),ym=t.slice(0,7),[y,m]=ym.split('-').map(Number);
+  const info=monthInfo(ym);
+  let h=`<h2>${y}年${m}月</h2><div class="card"><table><tr><th>教科</th><th>進み</th><th>目安</th><th>遅れ</th></tr>`;
+  SUB.forEach(s=>{const n=monthCount(ym,s.k),g=target(s.k),b=Math.max(0,g-n);
+    h+=`<tr><td>${s.n}</td><td>${n}/${PER}</td><td>${g}</td><td>${b?`<b>${b}</b>`:'なし'}</td></tr>`});
+  h+=`</table><div class="sub" style="margin-top:8px">平日（冊子期間を除く）${info.total}日中 ${info.elapsed}日経過</div></div>`;
+  const first=new Date(y,m-1,1).getDay(),n=new Date(y,m,0).getDate();
+  h+=`<div class="card"><div class="cal">${DAYNAME.map(d=>`<div class="hd">${d}</div>`).join('')}`;
+  for(let i=0;i<first;i++)h+='<div></div>';
+  for(let i=1;i<=n;i++){
+    const d=`${ym}-${pad(i)}`,L=st.log[d];
+    const has=L&&(L.b.length||L.focus||L.hw);
+    const bk=bookletOn(d)?' bk':'';
+    h+=`<div class="${has?'has':''}${bk}">${i}</div>`;
+  }
+  h+=`</div><div class="sub" style="margin-top:8px">青：何か取り組んだ日 ／ 点線：冊子期間</div></div>`;
+  $('#v-month').innerHTML=h;
+}
+function renderReward(){
+  const tot=rewardTotal(),lv=level(),next=LV[lv+1];
+  const ch=st.charId==='default'?'標準キャラ':(chars.find(c=>c.id===st.charId)?.name??'標準キャラ');
+  $('#rwInfo').innerHTML=`<div>キャラ：<b>${ch}</b></div>
+    <div>取り組み回数：<b>${tot}</b> 回 ／ 今の動き：<b>${LV[lv].name}</b></div>
+    <div class="sub">${next?`次は「${next.name}」まであと ${next.at-tot} 回`:'全部解放済み'}</div>`;
+  show3d();
+}
+function renderSettings(){
+  const W=DAYNAME;
+  let h=`<div class="card"><h2 style="margin-top:0">集中タイマー（曜日ごと）</h2>`;
+  for(let w=0;w<7;w++){const S=st.sched[w];
+    h+=`<div class="row wrap"><div style="width:30px">${W[w]}</div>
+    <label><input type="checkbox" data-sched="${w}" data-f="on" ${S.on?'checked':''}> 集中</label>
+    <input type="time" value="${S.time}" data-sched="${w}" data-f="time">
+    <select data-sched="${w}" data-f="min">${[15,20,30,45].map(v=>`<option value="${v}" ${S.min==v?'selected':''}>${v}分</option>`).join('')}</select>
+    <label><input type="checkbox" data-sched="${w}" data-f="cheer" ${S.cheer?'checked':''}> チア</label></div>`;
+  }
+  h+=`</div>`;
+  h+=`<div class="card"><h2 style="margin-top:0">遅れの閾値</h2>
+    <div class="sub">教科の遅れ合計がこの数以上で、1日の上限が3つになります</div>
+    <input type="number" min="1" max="8" value="${st.threshold}" data-f="threshold" style="width:100px;margin-top:8px"></div>`;
+  h+=`<div class="card"><h2 style="margin-top:0">冊子（難しい教材）</h2>`;
+  st.booklets.forEach(b=>{h+=`<div class="row"><div class="name">${b.name}<div class="sub">${b.start} から ${b.days}日間</div></div>
+    <button class="btn danger" data-act="delBk" data-id="${b.id}">削除</button></div>`});
+  h+=`<div style="margin-top:10px"><input id="bkName" placeholder="冊子名" style="width:100%">
+    <div style="display:flex;gap:6px;margin-top:6px"><input id="bkStart" type="date" value="${today()}">
+    <input id="bkDays" type="number" min="1" value="5" style="width:80px"><button class="btn" data-act="addBk">追加</button></div></div></div>`;
+  h+=`<div class="card"><h2 style="margin-top:0">キャラ</h2>`;
+  const all=[{id:'default',name:'標準キャラ',builtin:true},...chars];
+  all.forEach(c=>{h+=`<div class="row"><label style="flex:1"><input type="radio" name="cur" value="${c.id}" ${st.charId===c.id?'checked':''}> ${c.name}${c.type?`（${c.type}）`:''}</label>
+    ${c.builtin?'':`<button class="btn danger" data-act="delChar" data-id="${c.id}">削除</button>`}</div>`});
+  h+=`<div style="margin-top:10px"><label class="btn" style="display:inline-flex;align-items:center">追加（.glb / .html）
+    <input id="charFile" type="file" accept=".glb,.html" hidden></label></div></div>`;
+  h+=`<div class="card"><h2 style="margin-top:0">バックアップ</h2>
+    <button class="btn sub2" data-act="export">書き出し</button>
+    <button class="btn sub2" data-act="import">読み込み</button>
+    <div class="sub" style="margin-top:8px">予定や記録をテキストで保存・復元します。キャラ本体は含まれません。</div></div>`;
+  $('#v-settings').innerHTML=h;
+}
+function render(){
+  const v=document.querySelector('.view:not([hidden])')?.id;
+  ({'v-today':renderToday,'v-month':renderMonth,'v-reward':renderReward,'v-settings':renderSettings})[v]?.();
+}
+function showTab(n){
+  document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='v-'+n);
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('act',b.dataset.tab===n));
+  render();
+}
+
+// ---- キャラ（IndexedDB に保存） ----
+const dbp=new Promise((res,rej)=>{
+  const r=indexedDB.open('dailyPlanner',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('chars',{keyPath:'id'});
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+});
+async function tx(mode,fn){
+  const db=await dbp;
+  return new Promise((res,rej)=>{
+    const t=db.transaction('chars',mode);const r=fn(t.objectStore('chars'));
+    t.oncomplete=()=>res(r.result);t.onerror=()=>rej(t.error);
+  });
+}
+const putChar=c=>tx('readwrite',s=>s.put(c));
+const delChar=id=>tx('readwrite',s=>s.delete(id));
+const getChars=()=>tx('readonly',s=>s.getAll());
+async function loadChars(){chars=await getChars();render()}
+async function addChar(f){
+  const ext=f.name.split('.').pop().toLowerCase();
+  const id=String(Date.now());const name=f.name.replace(/\.[^.]+$/,'');
+  if(ext==='glb')await putChar({id,name,type:'glb',data:await f.arrayBuffer()});
+  else if(ext==='html')await putChar({id,name,type:'html',data:await f.text()});
+  else{alert('.glb か .html を選んでください');return false}
+  await loadChars();st.charId=id;return true;
+}
+
+// ---- 3D 表示（three.js） ----
+let three=null,renderer=null,scene=null,camera=null,obj=null,rightArm=null,loadedKey=null;
+const t0=performance.now();
+async function init3d(){
+  if(renderer)return true;
+  try{
+    three=await import('three');
+    renderer=new three.WebGLRenderer({canvas:$('#stage'),antialias:true,alpha:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    scene=new three.Scene();
+    camera=new three.PerspectiveCamera(35,1,0.1,100);
+    camera.position.set(0,1.6,7);camera.lookAt(0,1.3,0);
+    scene.add(new three.AmbientLight(0xffffff,0.9));
+    const d=new three.DirectionalLight(0xffffff,1.2);d.position.set(3,5,4);scene.add(d);
+    requestAnimationFrame(loop);
+    return true;
+  }catch(err){
+    if(!$('#rwNote'))$('#rwInfo').insertAdjacentHTML('beforeend','<div id="rwNote" class="note">3D表示を読み込めませんでした。通信環境を確認してください。</div>');
+    return false;
+  }
+}
+function addDefault(){
+  obj=new three.Group();
+  const m=c=>new three.MeshStandardMaterial({color:c});
+  const head=new three.Mesh(new three.SphereGeometry(0.5,32,32),m(0xffcc80));head.position.y=2.1;
+  const body=new three.Mesh(new three.BoxGeometry(1,1.2,0.6),m(0x42a5f5));body.position.y=1.2;
+  const legL=new three.Mesh(new three.BoxGeometry(0.3,0.9,0.3),m(0x37474f));legL.position.set(-0.25,0.45,0);
+  const legR=legL.clone();legR.position.x=0.25;
+  const armL=new three.Mesh(new three.BoxGeometry(0.25,1,0.25),m(0x42a5f5));armL.position.set(-0.7,0.6,0);
+  rightArm=new three.Group();rightArm.position.set(0.7,1.3,0);
+  const armR=new three.Mesh(new three.BoxGeometry(0.25,1,0.25),m(0x42a5f5));armR.position.set(0,-0.5,0);
+  rightArm.add(armR);
+  obj.add(head,body,legL,legR,armL,rightArm);
+  scene.add(obj);
+}
+async function show3d(){
+  const cur=st.charId==='default'?null:chars.find(c=>c.id===st.charId);
+  const cv=$('#stage'),fr=$('#htmlChar');
+  if(cur&&cur.type==='html'){
+    cv.hidden=true;fr.hidden=false;
+    if(fr.dataset.id!==cur.id){fr.srcdoc=cur.data;fr.dataset.id=cur.id}
+    return;
+  }
+  cv.hidden=false;fr.hidden=true;
+  if(!(await init3d()))return;
+  const key=cur?cur.id:'default';
+  if(loadedKey===key)return;
+  loadedKey=key;
+  if(obj){scene.remove(obj);obj=null;rightArm=null}
+  if(cur&&cur.type==='glb'){
+    try{
+      const{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
+      new GLTFLoader().parse(cur.data,'',g=>{
+        if(loadedKey!==key)return;
+        obj=g.scene;
+        const box=new three.Box3().setFromObject(obj);
+        const size=box.getSize(new three.Vector3());
+        const s=2.4/size.y;
+        obj.scale.setScalar(s);
+        const c=box.getCenter(new three.Vector3()).multiplyScalar(s);
+        obj.position.set(-c.x,-box.min.y*s,-c.z);
+        scene.add(obj);
+      },()=>{if(loadedKey===key)addDefault()});
+    }catch(e){addDefault()}
+  }else addDefault();
+}
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!renderer||!obj)return;
+  if($('#v-reward').hidden)return;
+  const t=(now-t0)/1000,m=LV[level()].motion;
+  if(m==='idle'){obj.position.y=Math.sin(t*2)*0.04;obj.rotation.y=0}
+  if(m==='bounce'){obj.position.y=Math.abs(Math.sin(t*4))*0.25;obj.rotation.y=0}
+  if(m==='wave'){obj.position.y=Math.sin(t*2)*0.04;obj.rotation.y=Math.sin(t*1.5)*0.3}
+  if(m==='dance'){obj.position.y=Math.abs(Math.sin(t*5))*0.3;obj.rotation.y=Math.sin(t*5)*0.8}
+  if(rightArm)rightArm.rotation.z=m==='wave'?-2.6+Math.sin(t*6)*0.3:-0.15;
+  const cv=$('#stage');const w=cv.clientWidth,h=cv.clientHeight;
+  if(w&&h&&cv.width!==Math.floor(w*renderer.getPixelRatio())){
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  }
+  renderer.render(scene,camera);
+}
+
+// ---- イベント ----
+document.addEventListener('click',async e=>{
+  const tab=e.target.closest('[data-tab]');
+  if(tab){showTab(tab.dataset.tab);return}
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const a=b.dataset.act;
+  if(a==='ben'){toggleBen(b.dataset.k);return}
+  if(a==='fix'){
+    const L=dl(today()),k=b.dataset.k;
+    if(k.startsWith('bk:')){const id=k.slice(3);L.bk[id]=!L.bk[id]}
+    else L[k]=!L[k];
+    save();return;
+  }
+  if(a==='start'){startTimer(Number(b.dataset.min));return}
+  if(a==='pause'){pauseTimer();return}
+  if(a==='resume'){resumeTimer();return}
+  if(a==='addBk'){
+    const name=$('#bkName').value.trim()||'冊子';
+    const start=$('#bkStart').value||today();
+    const days=Number($('#bkDays').value)||5;
+    st.booklets.push({id:String(Date.now()),name,start,days});save();return;
+  }
+  if(a==='delBk'){st.booklets=st.booklets.filter(x=>x.id!==b.dataset.id);save();return}
+  if(a==='delChar'){
+    await delChar(b.dataset.id);
+    if(st.charId===b.dataset.id)st.charId='default';
+    loadedKey=null;await loadChars();save();return;
+  }
+  if(a==='export'){prompt('このテキストをコピーして保存してください',JSON.stringify(st));return}
+  if(a==='import'){
+    const s=prompt('保存したテキストを貼り付けてください');
+    if(s){try{st={...structuredClone(DEF),...JSON.parse(s)};save()}catch(err){alert('読み込めませんでした')}}
+    return;
+  }
+});
+document.addEventListener('change',async e=>{
+  const t=e.target;
+  if(t.dataset.sched!==undefined){
+    const S=st.sched[t.dataset.sched],f=t.dataset.f;
+    S[f]=t.type==='checkbox'?t.checked:(f==='min'?Number(t.value):t.value);
+    save();return;
+  }
+  if(t.dataset.f==='threshold'){st.threshold=Math.max(1,Number(t.value)||2);save();return}
+  if(t.name==='cur'){st.charId=t.value;loadedKey=null;save();return}
+  if(t.id==='charFile'&&t.files[0]){await addChar(t.files[0]);save()}
+});
+
+showTab('today');
+loadChars();
+</script>
+</body>
+</html>
