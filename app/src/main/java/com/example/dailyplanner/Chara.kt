@@ -46,7 +46,7 @@ object Chara {
         val wv = WebView(activity)
         wv.setBackgroundColor(Color.TRANSPARENT)
         wv.settings.javaScriptEnabled = true
-        wv.layerType = View.LAYER_TYPE_SOFTWARE
+        wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         wv.layout(0, 0, SIZE, SIZE)
         wv.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {

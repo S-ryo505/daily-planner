@@ -27,7 +27,6 @@ import androidx.glance.background
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row as GlanceRow
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.defaultWeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -92,7 +91,7 @@ private fun WidgetBody(
                 Text("アプリを開く", style = TextStyle(fontSize = 12.sp))
             }
         }
-        Column(modifier = GlanceModifier.defaultWeight()) {
+        Column(modifier = GlanceModifier.fillMaxWidth()) {
             Text(
                 bubble,
                 modifier = GlanceModifier
